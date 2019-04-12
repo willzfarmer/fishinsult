@@ -26,6 +26,8 @@ POINT_TIMINGS = {}
 PROTECTIONS = {}
 FARM_LIST = {}
 MAX_FARM = 5
+last_regen = 0
+USER_ROLE = "Knights Belligerent"
 
 the_chosen = [
     '195663495189102593', # snek
@@ -212,6 +214,8 @@ class Battle(BaseCog):
 
         # We need to count each message
         async def count_message(message, reaction=None, action=None):
+            global last_regen
+
             # Prevent snek from voting on herself or counting
             clean_message = message.clean_content.lower()
             if not clean_message.startswith('.') and random.random() <= 0.1:
@@ -229,9 +233,20 @@ class Battle(BaseCog):
             userID          = message.author.id
             message_channel = message.channel.name.lower()
 
+            #NO XP for non players ideally
+            if USER_ROLE not in reaction.message.author.roles:
+                return
+
             # don't do the #battle channel
             if 'battle' in message_channel:
                 return
+
+            #New code for passive regeneration
+            if time.time() > last_regen + ONE_HOUR:
+                for member in message.guild.members:
+                    for role in member.roles:
+                        if role.name == USER_ROLE:
+                            heal_user(member)
 
             add_points = False
             if (userID not in POINT_TIMINGS) or (time.time() - POINT_TIMINGS[userID] > 60):
@@ -254,10 +269,15 @@ class Battle(BaseCog):
             if reaction.message.guild is None:
                 return
 
+
             server          = reaction.message.guild.id
             channel         = reaction.message.channel.id
             userID          = reaction.message.author.id
             message_channel = reaction.message.channel.name.lower()
+
+            #NO XP for non players ideally
+            if USER_ROLE not in reaction.message.author.roles:
+                return
 
             with db_session:
                 user = get_user(userID)
@@ -282,7 +302,9 @@ class Battle(BaseCog):
             channel         = reaction.message.channel.id
             userID          = reaction.message.author.id
             message_channel = reaction.message.channel.name.lower()
-
+            #NO XP for non players ideally
+            if USER_ROLE not in reaction.message.author.roles:
+                return
             with db_session:
                 user = get_user(userID)
 
@@ -464,6 +486,12 @@ class Battle(BaseCog):
         """
         protected = PROTECTIONS.get(ctx.message.author.id)
         punish_author = False
+
+        # NO XP for non players ideally
+        if USER_ROLE not in user.roles:
+            await ctx.send(f'{user.mention} is not playing the game. Cannot be attacked!')
+            return
+
         if protected is not None:
             if time.time() - protected <= ONE_HOUR:
                 await ctx.send(f'{ctx.message.author.mention} is protected and cannot attack!')
@@ -540,3 +568,38 @@ class Battle(BaseCog):
             else:
                 await ctx.send('The attack misses!')
                 return
+
+    @commands.command()
+    async def join_battle(self, ctx):
+        user = ctx.message.author
+        role = discord.utils.get(user.server.roles, name=USER_ROLE)
+        await discord.Client.add_roles(user, role)
+
+    @commands.command
+    async def leave_battle(self, ctx):
+        author = ctx.message.author
+        user = get_user(author.id)
+        role = discord.utils.get(author.server.roles, name=USER_ROLE)
+        #Stop people from using role bounces after they leave
+        user.hp=0
+        await discord.Client.remove_roles(author, role)
+
+    @commands.command
+    async def get_target_list(self, ctx):
+        author = ctx.message.author
+        user = get_user(author.id)
+        role = discord.utils.get(author.server.roles, name=USER_ROLE)
+        message = ""
+        for member in ctx.message.guild.members:
+            status_string = ""
+            if USER_ROLE in member.roles.name:
+                if PROTECTIONS.get(member.id):
+                    status_string += "Protected, "
+                if FARM_LIST.get(member.id):
+                    status_string += "Farm protection"
+                if status_string =="":
+                    status_string == "Valid"
+            else:
+                status_string = "not_playing"
+            message += member.name + " | " + status_string + "\n"
+        await discord.Client.send_message(author, message)
