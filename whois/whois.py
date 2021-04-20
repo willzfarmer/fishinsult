@@ -16,7 +16,35 @@ class WhoIs(BaseCog):
     def __init__(self, bot_instance):
         self.bot: bot = bot_instance
 
+
+    @commands.command()
+    async def iseveryone(self, ctx):
+        con = sq.connect(WHOFILE)
+        cursor = con.cursor()
+        cursor.execute("SELECT userid, name " "FROM usernames")
+        results = cursor.fetchall()
+        results = [
+            (ctx.guild.get_member(int(userid)), name) for userid, name in results
+        ]
+
+        max_character = 2000
+        msg_size = 0
+        msg = ""
+        for (mention, name) in results:
+            if mention is not "None":
+                to_append = "{} is {}\n".format(mention, name)
+                characters += len(to_append)
+                if characters >= CHAR_LIMIT:
+                    await ctx.send(msg)
+                    msg = to_append
+                    characters = len(to_append)
+                else:
+                    msg += to_append
+        if msg is not "":
+            await ctx.send(msg)
+        con.close()
         data_dir = data_manager.bundled_data_path(self)
+
 
         self.config = Config.get_conf(
             self,
